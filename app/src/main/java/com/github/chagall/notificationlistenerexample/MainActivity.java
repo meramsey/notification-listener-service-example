@@ -4,14 +4,19 @@ import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.provider.Settings;
-import androidx.appcompat.app.AppCompatActivity;
+import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.text.TextUtils;
+import android.util.Log;
 import android.widget.ImageView;
+import android.widget.TextView;
+
+import androidx.appcompat.app.AppCompatActivity;
 
 /**
  * MIT License
@@ -38,6 +43,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String ACTION_NOTIFICATION_LISTENER_SETTINGS = "android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS";
 
     private ImageView interceptedNotificationImageView;
+    private TextView interceptedNotificationPackageNameTextView;
     private ImageChangeBroadcastReceiver imageChangeBroadcastReceiver;
     private AlertDialog enableNotificationListenerAlertDialog;
 
@@ -50,8 +56,11 @@ public class MainActivity extends AppCompatActivity {
         interceptedNotificationImageView
                 = (ImageView) this.findViewById(R.id.intercepted_notification_logo);
 
+        interceptedNotificationPackageNameTextView
+                = (TextView) this.findViewById(R.id.intercepted_notification_package_name);
+        
         // If the user did not turn the notification listener service on we prompt him to do so
-        if(!isNotificationServiceEnabled()){
+        if (!isNotificationServiceEnabled()) {
             enableNotificationListenerAlertDialog = buildNotificationServiceAlertDialog();
             enableNotificationListenerAlertDialog.show();
         }
@@ -60,7 +69,7 @@ public class MainActivity extends AppCompatActivity {
         imageChangeBroadcastReceiver = new ImageChangeBroadcastReceiver();
         IntentFilter intentFilter = new IntentFilter();
         intentFilter.addAction("com.github.chagall.notificationlistenerexample");
-        registerReceiver(imageChangeBroadcastReceiver,intentFilter);
+        registerReceiver(imageChangeBroadcastReceiver, intentFilter);
     }
 
     @Override
@@ -69,42 +78,27 @@ public class MainActivity extends AppCompatActivity {
         unregisterReceiver(imageChangeBroadcastReceiver);
     }
 
-    /**
-     * Change Intercepted Notification Image
-     * Changes the MainActivity image based on which notification was intercepted
-     * @param notificationCode The intercepted notification code
-     */
-    private void changeInterceptedNotificationImage(int notificationCode){
-        switch(notificationCode){
-            case NotificationListenerExampleService.InterceptedNotificationCode.FACEBOOK_CODE:
-                interceptedNotificationImageView.setImageResource(R.drawable.facebook_logo);
-                break;
-            case NotificationListenerExampleService.InterceptedNotificationCode.INSTAGRAM_CODE:
-                interceptedNotificationImageView.setImageResource(R.drawable.instagram_logo);
-                break;
-            case NotificationListenerExampleService.InterceptedNotificationCode.WHATSAPP_CODE:
-                interceptedNotificationImageView.setImageResource(R.drawable.whatsapp_logo);
-                break;
-            case NotificationListenerExampleService.InterceptedNotificationCode.OTHER_NOTIFICATIONS_CODE:
-                interceptedNotificationImageView.setImageResource(R.drawable.other_notification_logo);
-                break;
+    private void changeInterceptedNotificationImageAndPackageName(int notificationCode, String packageName) {
+        Drawable appIcon;
+        try {
+            appIcon = getPackageManager().getApplicationIcon(packageName);
+            interceptedNotificationImageView.setImageDrawable(appIcon);
+        } catch (PackageManager.NameNotFoundException e) {
+            interceptedNotificationImageView.setImageResource(R.drawable.other_notification_logo);
+            Log.e("MainActivity", "Application Icon is not found for package: " + packageName);
         }
+
+        interceptedNotificationPackageNameTextView.setText(packageName);
     }
 
-    /**
-     * Is Notification Service Enabled.
-     * Verifies if the notification listener service is enabled.
-     * Got it from: https://github.com/kpbird/NotificationListenerService-Example/blob/master/NLSExample/src/main/java/com/kpbird/nlsexample/NLService.java
-     * @return True if enabled, false otherwise.
-     */
-    private boolean isNotificationServiceEnabled(){
+    private boolean isNotificationServiceEnabled() {
         String pkgName = getPackageName();
         final String flat = Settings.Secure.getString(getContentResolver(),
                 ENABLED_NOTIFICATION_LISTENERS);
         if (!TextUtils.isEmpty(flat)) {
             final String[] names = flat.split(":");
-            for (int i = 0; i < names.length; i++) {
-                final ComponentName cn = ComponentName.unflattenFromString(names[i]);
+            for (String name : names) {
+                final ComponentName cn = ComponentName.unflattenFromString(name);
                 if (cn != null) {
                     if (TextUtils.equals(pkgName, cn.getPackageName())) {
                         return true;
@@ -124,8 +118,10 @@ public class MainActivity extends AppCompatActivity {
     public class ImageChangeBroadcastReceiver extends BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
-            int receivedNotificationCode = intent.getIntExtra("Notification Code",-1);
-            changeInterceptedNotificationImage(receivedNotificationCode);
+            int receivedNotificationCode = intent.getIntExtra("Notification Code", -1);
+            String receivedPackageName = intent.getStringExtra("Package Name");
+            Log.d("MainActivity", "Received notification from package: " + receivedPackageName);
+            changeInterceptedNotificationImageAndPackageName(receivedNotificationCode, receivedPackageName);
         }
     }
 
@@ -141,18 +137,12 @@ public class MainActivity extends AppCompatActivity {
         alertDialogBuilder.setTitle(R.string.notification_listener_service);
         alertDialogBuilder.setMessage(R.string.notification_listener_service_explanation);
         alertDialogBuilder.setPositiveButton(R.string.yes,
-                new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface dialog, int id) {
-                        startActivity(new Intent(ACTION_NOTIFICATION_LISTENER_SETTINGS));
-                    }
-                });
+                (dialog, id) -> startActivity(new Intent(ACTION_NOTIFICATION_LISTENER_SETTINGS)));
         alertDialogBuilder.setNegativeButton(R.string.no,
-                new DialogInterface.OnClickListener() {
-                    public void onClick(DialogInterface dialog, int id) {
-                        // If you choose to not enable the notification listener
-                        // the app. will not work as expected
-                    }
+                (dialog, id) -> {
+                    // If you choose to not enable the notification listener
+                    // the app. will not work as expected
                 });
-        return(alertDialogBuilder.create());
+        return (alertDialogBuilder.create());
     }
 }
